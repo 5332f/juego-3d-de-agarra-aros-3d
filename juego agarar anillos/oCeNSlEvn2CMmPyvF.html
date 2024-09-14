@@ -1,0 +1,472 @@
+<html><head><base href="https://hq-3d-roblox-obby-game.com/?responsive=yes&keybindings_move=wasd&jump=spacebar&respawn_checkpoints=yes&levels=4"><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beautiful 3D Roblox-style Obby Game</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+<style>
+    body, html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+    }
+    #game-container {
+        width: 100%;
+        height: 100%;
+    }
+    #centered-counter {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fff;
+        font-size: 36px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        background: rgba(0,0,0,0.3);
+        padding: 10px 20px;
+        border-radius: 20px;
+        backdrop-filter: blur(5px);
+        z-index: 10;
+    }
+    #hud {
+        position: absolute;
+        top: 70px;
+        left: 20px;
+        color: #fff;
+        font-size: 18px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        background: rgba(0,0,0,0.3);
+        padding: 10px 20px;
+        border-radius: 20px;
+        backdrop-filter: blur(5px);
+    }
+    #level-complete {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.7);
+        color: #fff;
+        padding: 30px;
+        border-radius: 20px;
+        text-align: center;
+        display: none;
+        box-shadow: 0 0 20px rgba(255,255,255,0.2);
+    }
+    #level-complete h2 {
+        margin-top: 0;
+        font-size: 28px;
+        color: #ffd700;
+    }
+    #instructions {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        color: #fff;
+        font-size: 13px;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        background: rgba(0,0,0,0.3);
+        padding: 10px 20px;
+        border-radius: 20px;
+        backdrop-filter: blur(5px);
+        max-width: 80%;
+    }
+    .glow {
+        animation: glow 2s ease-in-out infinite alternate;
+    }
+    @keyframes glow {
+        from {
+            text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px #fff, 0 0 20px #ff00de, 0 0 35px #ff00de, 0 0 40px #ff00de, 0 0 50px #ff00de, 0 0 75px #ff00de;
+        }
+        to {
+            text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #fff, 0 0 40px #ff00de, 0 0 70px #ff00de, 0 0 80px #ff00de, 0 0 100px #ff00de, 0 0 150px #ff00de;
+        }
+    }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+<div id="centered-counter">Checkpoints: <span id="centered-checkpoints" class="glow">0/0</span></div>
+<div id="hud">Level: <span id="level" class="glow">1</span> | Defeated: <span id="defeats" class="glow">0</span> | Volume: <span id="volume" class="glow">100%</span></div>
+<div id="level-complete">
+    <h2 class="glow">Level Complete!</h2>
+    <p>Press Enter to continue to the next level.</p>
+</div>
+<div id="instructions">
+    WASD: Move | Spacebar: Jump | Right Mouse Button: Rotate Camera | Left Shift: Speedrun | +/-: Volume Control
+</div>
+<audio id="checkpoint-sound" src="https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3"></audio>
+<audio id="obstacle-sound" src="https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3"></audio>
+<audio id="level-complete-sound" src="https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3"></audio>
+<script>
+let scene, camera, renderer, player, obstacles, checkpoints, currentLevel = 1, totalLevels = 4;
+let playerVelocity = new THREE.Vector3();
+let playerOnGround = false;
+let checkpointCount = 0;
+let isRightMouseDown = false;
+let lastMouseX = 0;
+let lastMouseY = 0;
+let cameraRotation = 0;
+let checkpointOriginalColor = new THREE.Color(0x0000ff);
+let isShiftPressed = false;
+let defeatCount = 0;
+let gameVolume = 1;
+
+function init() {
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.01);
+    
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000);
+    document.getElementById('game-container').appendChild(renderer.domElement);
+    
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(0, 1, 0);
+    scene.add(directionalLight);
+    
+    createPlayer();
+    createLevel(currentLevel);
+    updateVolume();
+    
+    camera.position.set(0, 5, 10);
+    camera.lookAt(player.position);
+    
+    window.addEventListener('resize', onWindowResize, false);
+    document.addEventListener('keydown', onKeyDown, false);
+    document.addEventListener('keyup', onKeyUp, false);
+    document.addEventListener('mousedown', onMouseDown, false);
+    document.addEventListener('mouseup', onMouseUp, false);
+    document.addEventListener('mousemove', onMouseMove, false);
+    
+    animate();
+}
+
+function createPlayer() {
+    const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+    const material = new THREE.MeshPhongMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.5 });
+    player = new THREE.Mesh(geometry, material);
+    player.position.set(0, 0.5, 0);
+    scene.add(player);
+    
+    const light = new THREE.PointLight(0x00ff00, 1, 10);
+    player.add(light);
+}
+
+function createLevel(level) {
+    while(scene.children.length > 0){ 
+        scene.remove(scene.children[0]); 
+    }
+    scene.add(player);
+    obstacles = [];
+    checkpoints = [];
+    
+    const groundGeometry = new THREE.PlaneGeometry(100, 100);
+    const groundMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x444444,
+        shininess: 10,
+        bumpMap: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/waternormals.jpg'),
+        bumpScale: 0.1
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+    
+    for (let i = 0; i < 5 + level * 2; i++) {
+        const obstacleGeometry = new THREE.BoxGeometry(2, Math.random() * 3 + 1, 2);
+        const obstacleMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.2,
+            shininess: 30,
+            map: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/lava/lavatile.jpg'),
+            normalMap: new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/lava/cloud.png'),
+            normalScale: new THREE.Vector2(0.5, 0.5)
+        });
+        const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+        obstacle.position.set(
+            Math.random() * 40 - 20,
+            obstacleGeometry.parameters.height / 2,
+            Math.random() * 40 - 20
+        );
+        scene.add(obstacle);
+        obstacles.push(obstacle);
+
+        const glowMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                c: { type: "f", value: 0.1 },
+                p: { type: "f", value: 1.4 },
+                glowColor: { type: "c", value: new THREE.Color(0xff0000) },
+                viewVector: { type: "v3", value: camera.position }
+            },
+            vertexShader: `
+                uniform vec3 viewVector;
+                varying float intensity;
+                void main() {
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                    vec3 actual_normal = vec3(modelMatrix * vec4(normal, 0.0));
+                    intensity = pow( dot(normalize(viewVector), actual_normal), p );
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 glowColor;
+                varying float intensity;
+                void main() {
+                    vec3 glow = glowColor * intensity;
+                    gl_FragColor = vec4( glow, 1.0 );
+                }
+            `,
+            side: THREE.BackSide,
+            blending: THREE.AdditiveBlending,
+            transparent: true
+        });
+
+        const glowMesh = new THREE.Mesh(obstacleGeometry.clone(), glowMaterial);
+        glowMesh.scale.multiplyScalar(1.1);
+        obstacle.add(glowMesh);
+
+        gsap.to(obstacle.scale, {
+            x: 1.1,
+            y: 1.1,
+            z: 1.1,
+            duration: 1 + Math.random(),
+            yoyo: true,
+            repeat: -1,
+            ease: "power1.inOut"
+        });
+    }
+    
+    for (let i = 0; i < 3 + level; i++) {
+        const checkpointGeometry = new THREE.TorusGeometry(0.5, 0.2, 16, 100);
+        const checkpointMaterial = new THREE.MeshPhongMaterial({ 
+            color: checkpointOriginalColor,
+            emissive: checkpointOriginalColor,
+            emissiveIntensity: 0.5,
+            shininess: 30
+        });
+        const checkpoint = new THREE.Mesh(checkpointGeometry, checkpointMaterial);
+        checkpoint.position.set(
+            Math.random() * 40 - 20,
+            0.5,
+            Math.random() * 40 - 20
+        );
+        scene.add(checkpoint);
+        checkpoints.push(checkpoint);
+    }
+    
+    player.position.set(0, 0.5, 0);
+    playerVelocity.set(0, 0, 0);
+    playerOnGround = false;
+    checkpointCount = 0;
+    defeatCount = 0;
+    updateHUD();
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function onKeyDown(event) {
+    switch(event.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+            playerVelocity.z = -0.1;
+            break;
+        case 'KeyS':
+        case 'ArrowDown':
+            playerVelocity.z = 0.1;
+            break;
+        case 'KeyA':
+        case 'ArrowLeft':
+            playerVelocity.x = -0.1;
+            break;
+        case 'KeyD':
+        case 'ArrowRight':
+            playerVelocity.x = 0.1;
+            break;
+        case 'Space':
+            if (playerOnGround) {
+                playerVelocity.y = 0.15;
+                playerOnGround = false;
+            }
+            break;
+        case 'Enter':
+            if (checkpointCount === checkpoints.length) {
+                nextLevel();
+            }
+            break;
+        case 'ShiftLeft':
+            isShiftPressed = true;
+            break;
+        case 'Equal':
+        case 'NumpadAdd':
+            adjustVolume(0.1);
+            break;
+        case 'Minus':
+        case 'NumpadSubtract':
+            adjustVolume(-0.1);
+            break;
+    }
+}
+
+function onKeyUp(event) {
+    switch(event.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+        case 'KeyS':
+        case 'ArrowDown':
+            playerVelocity.z = 0;
+            break;
+        case 'KeyA':
+        case 'ArrowLeft':
+        case 'KeyD':
+        case 'ArrowRight':
+            playerVelocity.x = 0;
+            break;
+        case 'ShiftLeft':
+            isShiftPressed = false;
+            break;
+    }
+}
+
+function onMouseDown(event) {
+    if (event.button === 2) {
+        isRightMouseDown = true;
+        lastMouseX = event.clientX;
+        lastMouseY = event.clientY;
+    }
+}
+
+function onMouseUp(event) {
+    if (event.button === 2) {
+        isRightMouseDown = false;
+    }
+}
+
+function onMouseMove(event) {
+    if (isRightMouseDown) {
+        const deltaX = event.clientX - lastMouseX;
+        const deltaY = event.clientY - lastMouseY;
+        
+        cameraRotation -= deltaX * 0.01;
+        
+        camera.position.y = Math.max(5, Math.min(15, camera.position.y - deltaY * 0.1));
+        
+        lastMouseX = event.clientX;
+        lastMouseY = event.clientY;
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    
+    const speedMultiplier = isShiftPressed ? 2 : 1;
+    const rotatedVelocity = playerVelocity.clone().multiplyScalar(speedMultiplier).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraRotation);
+    player.position.add(rotatedVelocity);
+    
+    if (!playerOnGround) {
+        playerVelocity.y -= 0.01;
+    }
+    
+    if (player.position.y <= 0.5) {
+        player.position.y = 0.5;
+        playerOnGround = true;
+        playerVelocity.y = 0;
+    }
+    
+    for (let obstacle of obstacles) {
+        if (player.position.distanceTo(obstacle.position) < 1.5) {
+            player.position.set(0, 0.5, 0);
+            playerVelocity.set(0, 0, 0);
+            defeatCount++;
+            updateHUD();
+            playSound('obstacle-sound');
+            break;
+        }
+    }
+    
+    for (let i = 0; i < checkpoints.length; i++) {
+        checkpoints[i].rotation.y += 0.02;
+        if (player.position.distanceTo(checkpoints[i].position) < 1 && !checkpoints[i].collected) {
+            checkpoints[i].collected = true;
+            gsap.to(checkpoints[i].scale, { x: 1.5, y: 1.5, z: 1.5, duration: 0.3, yoyo: true, repeat: 1 });
+            gsap.to(checkpoints[i].material.color, { r: 1, g: 1, b: 0, duration: 0.5 });
+            gsap.to(checkpoints[i].material.emissive, { r: 1, g: 1, b: 0, duration: 0.5 });
+            checkpointCount++;
+            updateHUD();
+            playSound('checkpoint-sound');
+            
+            if (checkpointCount === checkpoints.length) {
+                document.getElementById('level-complete').style.display = 'block';
+                playSound('level-complete-sound');
+            }
+        }
+    }
+
+    obstacles.forEach(obstacle => {
+        const glowMesh = obstacle.children[0];
+        glowMesh.material.uniforms.viewVector.value = new THREE.Vector3().subVectors(camera.position, obstacle.position);
+    });
+
+    const cameraOffset = new THREE.Vector3(0, 5, 10).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraRotation);
+    camera.position.copy(player.position).add(cameraOffset);
+    camera.lookAt(player.position);
+    
+    renderer.render(scene, camera);
+}
+
+function updateHUD() {
+    document.getElementById('level').textContent = currentLevel;
+    document.getElementById('centered-checkpoints').textContent = checkpointCount + '/' + checkpoints.length;
+    document.getElementById('defeats').textContent = defeatCount;
+    document.getElementById('volume').textContent = Math.round(gameVolume * 100) + '%';
+}
+
+function playSound(soundId) {
+    const sound = document.getElementById(soundId);
+    sound.currentTime = 0;
+    sound.play();
+}
+
+function nextLevel() {
+    currentLevel++;
+    if (currentLevel <= totalLevels) {
+        createLevel(currentLevel);
+        document.getElementById('level-complete').style.display = 'none';
+        playSound('level-complete-sound');
+    } else {
+        alert('Congratulations! You completed all levels!');
+        currentLevel = 1;
+        createLevel(currentLevel);
+        document.getElementById('level-complete').style.display = 'none';
+        playSound('level-complete-sound');
+    }
+}
+
+function adjustVolume(delta) {
+    gameVolume = Math.max(0, Math.min(1, gameVolume + delta));
+    updateVolume();
+    updateHUD();
+}
+
+function updateVolume() {
+    const audioElements = document.getElementsByTagName('audio');
+    for (let audio of audioElements) {
+        audio.volume = gameVolume;
+    }
+}
+
+init();
+</script>
+</body>
+</html>
